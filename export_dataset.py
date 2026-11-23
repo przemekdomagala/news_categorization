@@ -1,4 +1,4 @@
-"""Eksportuje bazę do CSV oraz JSONL per topic, usuwając duplikaty treści."""
+"""Export the database to CSV and one JSONL file per topic, dropping duplicate bodies."""
 
 import csv
 import hashlib

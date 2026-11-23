@@ -1,8 +1,8 @@
-"""Pobiera artykuły z FreeNewsAPI z podziałem na topic do bazy SQLite.
+"""Download articles from FreeNewsAPI, split by topic, into a SQLite database.
 
-/news zwraca tylko tytuły (10 na stronę), więc treść każdego artykułu to osobne
-zapytanie do /details. Limity API: 2 zapytania/s i 5000 zapytań dziennie.
-Skrypt czeka na reset limitu i można go bezpiecznie przerwać oraz wznowić.
+/news returns titles only (10 per page), so each article body is a separate
+/details request. API limits: 2 requests/s and 5000 requests per day.
+The script waits for the limit to reset and can be stopped and resumed safely.
 """
 
 import argparse
@@ -19,7 +19,7 @@ API_URL = "https://api.freenewsapi.io/v1"
 ENV_FILE = Path(__file__).parent / ".env"
 DB_FILE = Path(__file__).parent / "data" / "news.sqlite"
 
-# custom_search nie opisuje tematyki artykułu, więc nie nadaje się na etykietę
+# custom_search does not describe the article's topic, so it is not used as a label
 EXCLUDED_TOPICS = {"custom_search"}
 MIN_BODY_CHARS = 200
 MIN_REQUEST_INTERVAL = 0.6
@@ -69,7 +69,7 @@ def read_api_key():
 
 
 def sleep_until(moment):
-    # Krótkie odcinki, bo time.sleep nie odlicza czasu, gdy komputer jest uśpiony
+    # Sleep in short stretches, because time.sleep does not count time while the computer is asleep
     while (remaining := (moment - datetime.now(timezone.utc)).total_seconds()) > 0:
         time.sleep(min(remaining, 60))
 
@@ -82,7 +82,7 @@ class ApiClient:
         self.requests_made = 0
 
     def get(self, path, params):
-        """Zwraca (status, json). Ponawia przy limitach i błędach przejściowych."""
+        """Return (status, json). Retry on rate limits and transient errors."""
         backoff = 5
         while True:
             time.sleep(max(0.0, self.last_request + MIN_REQUEST_INTERVAL - time.monotonic()))
@@ -145,7 +145,7 @@ def article_topics(db, uuid, details_topics):
 
 
 def load_attempts(db):
-    """Liczba pobranych artykułów per topic: pozwala równoważyć klasy po wznowieniu."""
+    """Number of fetched articles per topic, so classes stay balanced after a resume."""
     attempts = Counter()
     query = "SELECT uuid, topics FROM articles WHERE status != 'pending'"
     for uuid, topics in db.execute(query).fetchall():
@@ -193,7 +193,7 @@ def next_pending(db, topic):
 
 
 def fetch_details(db, client, uuid):
-    """Zapisuje szczegóły i zwraca listę topiców artykułu."""
+    """Save the article details and return its topic list."""
     status, payload = client.get("/details", {"uuid": uuid})
     if status != 200:
         log(f"Pomijam {uuid}: {status} {payload.get('error')}")
@@ -250,7 +250,7 @@ def main():
     log(f"Start: {len(topics)} topiców, gotowe artykuły: {usable}, cel: {args.target}")
 
     while usable < args.target and active:
-        # Zawsze topic z najmniejszą liczbą artykułów, żeby klasy były jak najrówniejsze
+        # Always pick the topic with the fewest articles, so the classes stay as even as possible
         topic = min(active, key=lambda t: (attempts[t], t))
         uuid = next_pending(db, topic)
 
