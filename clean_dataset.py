@@ -1,4 +1,4 @@
-"""Clean the title and body, keep articles of at least 100 words, and add a label from 8 groups."""
+"""Clean the title and body, keep articles of at least 100 words, merge near-duplicates, and add a label from 8 groups."""
 
 import csv
 import html
@@ -9,6 +9,7 @@ from pathlib import Path
 SOURCE = Path(__file__).parent / "data" / "articles.csv"
 OUTPUT = Path(__file__).parent / "data" / "clean" / "articles.csv"
 MIN_WORDS = 100
+DUPLICATE_PREFIX_CHARS = 300
 
 LABELS = {
     "sports": "sports",
@@ -144,6 +145,15 @@ def clean_text(text):
     return text.strip()
 
 
+def normalize(text):
+    return re.sub(r"\W+", " ", text.lower()).strip()
+
+
+def duplicate_keys(title, body):
+    """Two articles are the same story if they share a title or the start of the body."""
+    return [("title", normalize(title)), ("body", normalize(body)[:DUPLICATE_PREFIX_CHARS])]
+
+
 def coarse_labels(topics):
     labels = []
     for topic in topics.split("|"):
@@ -158,22 +168,33 @@ def coarse_labels(topics):
 
 def main():
     kept = []
+    owner = {}
     skipped_short = 0
+    merged_duplicates = 0
     with SOURCE.open(newline="", encoding="utf-8") as source:
         for row in csv.DictReader(source):
             body = clean_text(row["body"])
             if len(body.split()) < MIN_WORDS:
                 skipped_short += 1
                 continue
-            labels = coarse_labels(row["topics"])
-            kept.append(
-                {
-                    **row,
-                    "title": clean_text(row["title"]),
-                    "body": body,
-                    "label": "|".join(labels),
-                }
-            )
+            title = clean_text(row["title"])
+            keys = duplicate_keys(title, body)
+            first = next((owner[key] for key in keys if key in owner), None)
+            if first is not None:
+                # Same story from another publisher: keep the first copy, merge its topics.
+                merged_duplicates += 1
+                article = kept[first]
+                topics = set(article["topics"].split("|")) | set(row["topics"].split("|"))
+                article["topics"] = "|".join(sorted(topics))
+                for key in keys:
+                    owner.setdefault(key, first)
+                continue
+            for key in keys:
+                owner[key] = len(kept)
+            kept.append({**row, "title": title, "body": body})
+
+    for article in kept:
+        article["label"] = "|".join(coarse_labels(article["topics"]))
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with OUTPUT.open("w", newline="", encoding="utf-8") as output:
@@ -184,7 +205,10 @@ def main():
     counts = Counter(row["label"] for row in kept)
     single = sum(count for label, count in counts.items() if "|" not in label)
     print(f"Zapisano: {OUTPUT}")
-    print(f"Zostawione: {len(kept)} | Odrzucone (<{MIN_WORDS} słów): {skipped_short}")
+    print(
+        f"Zostawione: {len(kept)} | Odrzucone (<{MIN_WORDS} słów): {skipped_short}"
+        f" | Scalone duplikaty: {merged_duplicates}"
+    )
     print(f"Jedna etykieta: {single} | Wiele etykiet: {len(kept) - single}")
     for label, count in counts.most_common():
         print(f"{count:6d}  {label}")

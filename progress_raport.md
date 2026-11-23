@@ -12,7 +12,10 @@ The model is trained on cleaned single-label articles. The raw export is left un
 
 1. Cleans the title and the body.
 2. Drops the article if the cleaned body has fewer than 100 words.
-3. Maps the original topics onto one or more of eight labels and stores them in `label`, joined with `|` when an article belongs to more than one group.
+3. Merges syndicated copies of the same story. Two articles count as the same story if their normalized titles match or the first 300 characters of their normalized bodies match. The first copy is kept and the topics of all copies are combined, so a story that one publisher tagged `golf` and another tagged `travel` ends up with both.
+4. Maps the original topics onto one or more of eight labels and stores them in `label`, joined with `|` when an article belongs to more than one group.
+
+Exact duplicate bodies were already removed by the export, but the same story was often republished with small edits (for example by Yahoo, AOL, and the original outlet). Without step 3, 181 of the test articles had a near-copy in the training split and the model scored 98% on them, which inflated the test score.
 
 Text cleaning, in `clean_text`:
 
@@ -42,33 +45,34 @@ The eight labels and the original topics they absorb:
 | File | Rows | Role |
 |---|---:|---|
 | `data/articles.csv` | 17,046 | Raw export. No `label` column. |
-| `data/clean/articles.csv` | 16,485 | Cleaned text, 100-word minimum, one or more labels. |
-| `data/clean/articles_single.csv` | 13,584 | Same rows with exactly one label. This is the training file. |
+| `data/clean/articles.csv` | 15,395 | Cleaned text, 100-word minimum, duplicates merged, one or more labels. |
+| `data/clean/articles_single.csv` | 12,634 | Same rows with exactly one label. This is the training file. |
 
-561 articles were dropped because the cleaned body was under 100 words. Of the 16,485 kept articles, 2,901 still have more than one label and stay only in `data/clean/articles.csv`.
+561 articles were dropped because the cleaned body was under 100 words, and 1,090 were merged into an earlier copy of the same story. Of the 15,395 kept articles, 2,761 have more than one label and stay only in `data/clean/articles.csv`.
 
 Checks on the cleaned files:
 
 - No duplicate UUIDs. Every cleaned UUID is in the raw export, and every single-label UUID is in the cleaned file.
-- Shortest body is 100 words. Median body length is 474 words. Longest is 2,971 words.
+- Shortest body is 100 words. Median body length is 472 words. Longest is 2,971 words.
 - No empty titles or bodies.
 - Every `label` matches the mapping above. No unknown topics.
 - Running the cleaner again does not change any title or body.
 - No leftover URLs, emails, emoji, invisible characters, curly quotes, or handles.
-- 3,118 titles and 12,668 bodies differ from the raw export, so the cleaner did change the text.
+- No two kept articles share a normalized title or the first 300 characters of the body.
+- 2,893 titles and 11,891 bodies differ from the raw export, so the cleaner did change the text.
 
 Single-label class sizes (`data/clean/articles_single.csv`):
 
 | Label | Articles | Share |
 |---|---:|---:|
-| sports | 4,334 | 31.9% |
-| science_nature | 1,731 | 12.7% |
-| technology | 1,674 | 12.3% |
-| entertainment_culture | 1,525 | 11.2% |
-| lifestyle | 1,492 | 11.0% |
-| health | 1,062 | 7.8% |
-| business_finance | 1,058 | 7.8% |
-| politics_society | 708 | 5.2% |
+| sports | 3,993 | 31.6% |
+| technology | 1,584 | 12.5% |
+| science_nature | 1,566 | 12.4% |
+| entertainment_culture | 1,454 | 11.5% |
+| lifestyle | 1,405 | 11.1% |
+| business_finance | 1,009 | 8.0% |
+| health | 948 | 7.5% |
+| politics_society | 675 | 5.3% |
 
 ## Model
 
@@ -82,13 +86,13 @@ It is a linear text classifier: a TF–IDF vectorizer followed by multinomial lo
 
 Each row becomes one string: the title, a newline, then the body.
 
-The 13,584 articles are split 70% / 15% / 15%, stratified on `label`, with `random_state=42`:
+The 12,634 articles are split 70% / 15% / 15%, stratified on `label`, with `random_state=42`:
 
 | Split | Articles |
 |---|---:|
-| train | 9,508 |
-| validation | 2,038 |
-| test | 2,038 |
+| train | 8,843 |
+| validation | 1,895 |
+| test | 1,896 |
 
 Only the training split is used to fit the vectorizer and the classifier. Validation is a check of this first model. The test split is scored once and was not used to choose the settings.
 
@@ -109,35 +113,47 @@ The largest weights line up with the topics. Examples from the fitted model:
 
 | Label | Strongest terms |
 |---|---|
-| sports | season, team, championship, champion, golf, club, round, race, players, player |
-| technology | robots, pokémon, game, robot, robotics, apple, samsung, games, steam, ai |
-| business_finance | financial, bitcoin, job, bank, market, employers, crypto, jobs, nike, social security |
-| health | health, drug, mental health, mental, gambling, medical, drugs, patients, medicines, treatment |
-| science_nature | energy, brain, wildlife, scientists, fossil, animals, quantum, study, earth, researchers |
-| entertainment_culture | theatre, film, album, artist, cast, music, musical, actor, series, episode |
-| lifestyle | fishing, fashion, beauty, trail, miss, pageant, fish, tesla, vehicles, restaurant |
-| politics_society | students, university, student, education, minister, college, academic, archaeological, universities, learning |
+| sports | season, team, golf, championship, champion, round, race, tour, players, win |
+| technology | robots, robot, game, pokémon, apple, robotics, samsung, steam, games, galaxy |
+| business_finance | job, financial, bitcoin, market, employers, crypto, nike, bank, jobs, social security |
+| health | health, drug, mental health, mental, drugs, gambling, medical, medicines, patients, healthcare |
+| science_nature | energy, brain, wildlife, scientists, study, animals, earth, researchers, animal, quantum |
+| entertainment_culture | film, theatre, artist, album, cast, musical, music, actor, art, song |
+| lifestyle | fishing, fashion, restaurant, pageant, fish, miss, beauty, trail, tesla, road |
+| politics_society | students, university, student, minister, education, academic, chancellor, universities, state, computer |
 
 ### Results
 
 Accuracy is the share of articles with the correct label. Macro-F1 is the unweighted mean of the per-class F1 scores, so politics counts as much as sports.
 
-| Split | Accuracy | Macro-F1 |
+| Evaluation | Accuracy | Macro-F1 |
 |---|---:|---:|
-| validation | 0.915 | 0.893 |
-| test | 0.920 | 0.901 |
+| always predict `sports` (reference) | 0.316 | 0.060 |
+| validation | 0.921 | 0.901 |
+| 5-fold cross-validation on train + validation | | 0.901 ± 0.005 |
+| **test** | **0.906** | **0.880** |
 
-Test scores by class (2,038 articles):
+Test scores by class (1,896 articles):
 
 | Label | Precision | Recall | F1 | Support |
 |---|---:|---:|---:|---:|
-| sports | 0.976 | 0.952 | 0.964 | 650 |
-| entertainment_culture | 0.947 | 0.934 | 0.941 | 229 |
-| technology | 0.959 | 0.924 | 0.941 | 251 |
-| science_nature | 0.921 | 0.903 | 0.912 | 259 |
-| business_finance | 0.876 | 0.887 | 0.881 | 159 |
-| lifestyle | 0.858 | 0.893 | 0.875 | 224 |
-| health | 0.839 | 0.881 | 0.860 | 160 |
-| politics_society | 0.783 | 0.887 | 0.832 | 106 |
+| sports | 0.984 | 0.952 | 0.968 | 599 |
+| technology | 0.952 | 0.920 | 0.936 | 238 |
+| science_nature | 0.926 | 0.902 | 0.914 | 235 |
+| entertainment_culture | 0.932 | 0.885 | 0.908 | 218 |
+| health | 0.845 | 0.880 | 0.862 | 142 |
+| lifestyle | 0.809 | 0.882 | 0.844 | 211 |
+| business_finance | 0.825 | 0.836 | 0.830 | 152 |
+| politics_society | 0.723 | 0.851 | 0.782 | 101 |
 
-The model labeled 163 of the 2,038 test articles incorrectly. Sports and technology are the easiest classes. Politics and lifestyle are the hardest, which matches their smaller size and the overlap with neighboring topics.
+The model labeled 178 of the 1,896 test articles incorrectly. Sports and technology are the easiest classes. Politics, business, and lifestyle are the hardest: they are smaller and overlap with their neighbours (an article about an EV maker's share price is tagged `vehicles` but reads as business).
+
+Merging duplicates lowered the test macro-F1 from 0.901 to 0.880. The new number is the honest one: before, the test split contained near-copies of training articles.
+
+On the 2,761 multi-label articles, which the model never saw in training, the prediction is one of the true labels 92.8% of the time.
+
+### Limitations
+
+- **Noisy labels.** A label is the topic feed the API listed the article under. Some feeds contain unrelated stories (a stadium crush tagged `geology`, a Crimea war report tagged `vehicles`), so part of the remaining error is in the labels, not the model.
+- **One month of news.** 12,559 of the 12,634 training-file articles (99.4%) were published in July 2026, during the FIFA World Cup. The score says nothing about how well the model holds up on later news.
+- **Single-label training.** Boundary cases with two or more labels are left out of training and of the main test score.
