@@ -13,14 +13,16 @@
 
 ## Resulting data
 
-| Label | Articles (multi-label) | Articles (single-label only) |
-|---|---|---|
-| `sports` | 5,002 | 4,488 |
-| `science_nature` | 2,807 | 1,783 |
-| `lifestyle` | 2,622 | 1,538 |
-| `business_finance` | 2,384 | 1,121 |
-| `entertainment_culture` | 2,222 | 1,565 |
-| `technology` | 2,151 | 1,696 |
-| `politics_society` | 1,704 | 741 |
-| `health` | 1,594 | 1,105 |
-| **Articles in total** | **17,046** | **14,037** |
+Counts after cleaning, the 100-word minimum, and merging syndicated duplicates (`data/clean/articles.csv`). A multi-label article is counted once in every group it belongs to.
+
+| Label | Articles (any label) | Articles (single-label only) |
+|---|---:|---:|
+| `sports` | 4,467 | 3,993 |
+| `science_nature` | 2,491 | 1,566 |
+| `lifestyle` | 2,399 | 1,405 |
+| `business_finance` | 2,195 | 1,009 |
+| `entertainment_culture` | 2,062 | 1,454 |
+| `technology` | 2,007 | 1,584 |
+| `politics_society` | 1,547 | 675 |
+| `health` | 1,402 | 948 |
+| **Articles in total** | **15,395** | **12,634** |

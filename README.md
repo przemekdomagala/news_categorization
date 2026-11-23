@@ -35,7 +35,7 @@ uv run python download_news.py --target 12000
 Dłuższe pobieranie w tle:
 
 ```bash
-# macOS (caffeinate blokuje usypianie, ale nie działa przy zamkniętej klapie)
+# macOS (caffeinate blocks sleep, but not when the lid is closed)
 nohup caffeinate -i uv run python -u download_news.py --target 12000 >> download.log 2>&1 &
 
 # Linux
